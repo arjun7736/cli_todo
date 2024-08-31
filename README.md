@@ -1,5 +1,5 @@
 # cli_todo
-a todo app works only in terminal
+a todo app works only in terminal(currently only on linux devices)
 
 ## clone it by this command
 git clone https://github.com/arjun7736/cli_todo.git
@@ -8,7 +8,7 @@ git clone https://github.com/arjun7736/cli_todo.git
 cd cli_todo
 
 ## make executable by
-chmod +x index.js
+chmod +x todo.js
 
 ## link app 
 npm link

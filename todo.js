@@ -3,6 +3,12 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import fs from 'fs';
+import * as chrono from 'chrono-node';
+import boxen from 'boxen';
+import Table from 'cli-table3';
+import cfonts from 'cfonts';
+import gradient from 'gradient-string';
+import symbols from 'log-symbols';
 
 const todoFile = "./todo.json";
 
@@ -16,67 +22,232 @@ const saveTodos = () => {
     fs.writeFileSync(todoFile, JSON.stringify(todos, null, 2));
 };
 
+const renderHeader = () => {
+
+    console.clear();
+
+    cfonts.say('TODO CLI', {
+        font: 'block',
+        align: 'center',
+        gradient: ['cyan', 'blue']
+    });
+
+    const completed = todos.filter(t => t.done).length;
+    const pending = todos.filter(t => !t.done).length;
+
+    console.log(
+        boxen(
+            `${chalk.cyanBright('Total Tasks')} : ${todos.length}\n` +
+            `${chalk.greenBright('Completed')}  : ${completed}\n` +
+            `${chalk.yellowBright('Pending')}    : ${pending}`,
+            {
+                padding: 1,
+                borderStyle: 'round',
+                borderColor: 'cyan',
+                margin: 1
+            }
+        )
+    );
+};
+
 const mainMenu = async () => {
+
+    renderHeader();
+
     const answers = await inquirer.prompt([
         {
             type: "list",
             name: "option",
-            message: "What do you want to do?",
-            choices: ["add", "delete", "list", "mark as done","update", "exit"]
+            message: chalk.cyanBright("Select an option"),
+            choices: [
+                "add",
+                "delete",
+                "list",
+                "mark as done",
+                "update",
+                "exit"
+            ]
         }
     ]);
 
     switch (answers.option) {
+
         case "add":
             await addTodo();
             break;
+
         case "delete":
             await deleteTodo();
             break;
+
         case "list":
             listTodos();
             break;
+
         case "mark as done":
             await markTodoAsDone();
             break;
+
         case "update":
             await updateTodo();
             break;
+
         case "exit":
+
+            console.log(
+                chalk.greenBright(
+                    "\n👋 Goodbye!\n"
+                )
+            );
+
             process.exit();
+
         default:
-            console.log(chalk.red('Invalid option.'));
+            console.log(
+                chalk.red('Invalid option.')
+            );
             break;
     }
+
+    await pause();
 
     mainMenu();
 };
 
+const pause = async () => {
+
+    await inquirer.prompt([
+        {
+            type: 'input',
+            name: 'continue',
+            message: chalk.gray(
+                'Press ENTER to continue'
+            )
+        }
+    ]);
+};
+
 const addTodo = async () => {
+
+    renderHeader();
+
     const answers = await inquirer.prompt([
         {
             type: "input",
             name: "todo",
-            message: "What do you want to do?"
+            message: chalk.cyan("Enter task")
+        },
+        {
+            type: "input",
+            name: "due",
+            message: chalk.yellow(
+                "Enter due time (example: tomorrow 5pm)"
+            )
         }
     ]);
 
-    todos.push({ task: answers.todo, done: false });
+    const parsedDate = chrono.parseDate(
+        answers.due
+    );
+
+    if (!parsedDate) {
+
+        console.log(
+            symbols.error,
+            chalk.red(
+                "Could not understand the date."
+            )
+        );
+
+        return;
+    }
+
+    todos.push({
+        task: answers.todo,
+        done: false,
+        due: parsedDate.toISOString(),
+        notified: false
+    });
+
     saveTodos();
-    console.log(chalk.green('Todo added successfully!'));
+
+    console.log(
+        symbols.success,
+        chalk.greenBright(
+            `Todo added successfully`
+        )
+    );
 };
 
 const listTodos = () => {
-    console.log(chalk.blueBright('Your todos:'));
-    todos.forEach((todo, index) => {
-        const status = todo.done ? chalk.green('✓') : chalk.red('✗');
-        console.log(`${index + 1}. ${status} ${todo.task}`);
+
+    renderHeader();
+
+    if (todos.length === 0) {
+
+        console.log(
+            boxen(
+                chalk.yellow(
+                    'No todos found.'
+                ),
+                {
+                    padding: 1,
+                    borderColor: 'yellow',
+                    borderStyle: 'round'
+                }
+            )
+        );
+
+        return;
+    }
+
+    const table = new Table({
+        head: [
+            chalk.cyan('#'),
+            chalk.cyan('Task'),
+            chalk.cyan('Status'),
+            chalk.cyan('Due Date')
+        ],
+        style: {
+            head: [],
+            border: []
+        }
     });
+
+    todos.forEach((todo, index) => {
+
+        const status = todo.done
+            ? chalk.green('COMPLETED')
+            : chalk.red('PENDING');
+
+        const due = new Date(
+            todo.due
+        ).toLocaleString();
+
+        table.push([
+            index + 1,
+            todo.task,
+            status,
+            due
+        ]);
+    });
+
+    console.log(table.toString());
 };
 
 const deleteTodo = async () => {
+
+    renderHeader();
+
     if (todos.length === 0) {
-        console.log(chalk.red('No todos to delete.'));
+
+        console.log(
+            symbols.warning,
+            chalk.yellow(
+                'No todos to delete.'
+            )
+        );
+
         return;
     }
 
@@ -84,24 +255,41 @@ const deleteTodo = async () => {
         {
             type: "list",
             name: "index",
-            message: "Which todo do you want to delete?",
-            choices: todos.map((todo, index) => ({ name: todo.task, value: index }))
+            message: chalk.red(
+                "Select todo to delete"
+            ),
+            choices: todos.map((todo, index) => ({
+                name: todo.task,
+                value: index
+            }))
         }
     ]);
 
-    const index = answers.index;
-    if (index >= 0 && index < todos.length) {
-        todos.splice(index, 1);
-        saveTodos();
-        console.log(chalk.green('Todo deleted successfully!'));
-    } else {
-        console.log(chalk.red('Invalid index.'));
-    }
+    todos.splice(answers.index, 1);
+
+    saveTodos();
+
+    console.log(
+        symbols.success,
+        chalk.greenBright(
+            'Todo deleted successfully!'
+        )
+    );
 };
 
 const markTodoAsDone = async () => {
+
+    renderHeader();
+
     if (todos.length === 0) {
-        console.log(chalk.red('No todos to mark as done.'));
+
+        console.log(
+            symbols.warning,
+            chalk.yellow(
+                'No todos available.'
+            )
+        );
+
         return;
     }
 
@@ -109,23 +297,41 @@ const markTodoAsDone = async () => {
         {
             type: "list",
             name: "index",
-            message: "Which todo do you want to mark as done?",
-            choices: todos.map((todo, index) => ({ name: todo.task, value: index }))
+            message: chalk.green(
+                "Select completed todo"
+            ),
+            choices: todos.map((todo, index) => ({
+                name: todo.task,
+                value: index
+            }))
         }
     ]);
 
-    const index = answers.index;
-    if (index >= 0 && index < todos.length) {
-        todos[index].done = true;
-        saveTodos();
-        console.log(chalk.green('Todo marked as done!'));
-    } else {
-        console.log(chalk.red('Invalid index.'));
-    }
+    todos[answers.index].done = true;
+
+    saveTodos();
+
+    console.log(
+        symbols.success,
+        chalk.greenBright(
+            'Todo marked as completed!'
+        )
+    );
 };
+
 const updateTodo = async () => {
+
+    renderHeader();
+
     if (todos.length === 0) {
-        console.log(chalk.red('No todos to update.'));
+
+        console.log(
+            symbols.warning,
+            chalk.yellow(
+                'No todos available.'
+            )
+        );
+
         return;
     }
 
@@ -133,26 +339,65 @@ const updateTodo = async () => {
         {
             type: "list",
             name: "index",
-            message: "Which todo do you want to update?",
-            choices: todos.map((todo, index) => ({ name: todo.task, value: index }))
+            message: chalk.cyan(
+                "Select todo to update"
+            ),
+            choices: todos.map((todo, index) => ({
+                name: todo.task,
+                value: index
+            }))
         },
         {
             type: "input",
             name: "newTask",
-            message: "Enter the new description for the todo:",
-            validate: input => input.trim() ? true : 'Description cannot be empty.'
+            message: chalk.cyan(
+                "Enter updated task"
+            ),
+            validate: input =>
+                input.trim()
+                    ? true
+                    : 'Task cannot be empty.'
         }
     ]);
 
-    const index = answers.index;
-    if (index >= 0 && index < todos.length) {
-        todos[index].task = answers.newTask;
-        saveTodos();
-        console.log(chalk.green('Todo updated successfully!'));
-    } else {
-        console.log(chalk.red('Invalid index.'));
+    todos[answers.index].task = answers.newTask;
+
+    saveTodos();
+
+    console.log(
+        symbols.success,
+        chalk.greenBright(
+            'Todo updated successfully!'
+        )
+    );
+};
+
+const startApp = async () => {
+
+    try {
+
+        await mainMenu();
+
+    } catch (error) {
+
+        if (
+            error.name === 'ExitPromptError'
+        ) {
+
+            console.clear();
+
+            console.log(
+                chalk.yellowBright(
+                    '\n👋 Todo CLI closed.\n'
+                )
+            );
+
+            process.exit(0);
+        }
+
+        console.error(error);
     }
 };
 
+startApp();
 
-mainMenu();
